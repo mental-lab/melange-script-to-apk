@@ -1,0 +1,84 @@
+package:
+  name: ${PACKAGE_NAME}
+  version: ${PACKAGE_VERSION}
+  epoch: 0
+  description: ${PACKAGE_DESCRIPTION}
+  copyright:
+    - license: MIT
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - busybox
+      - python3
+      - ca-certificates-bundle
+
+pipeline:
+  - runs: |
+      ls -la
+      chmod +x ${SCRIPT_NAME} || echo "WARNING: Could not make script executable"
+
+  - runs: |
+      install -Dm755 ${SCRIPT_NAME} "${{targets.destdir}}/usr/bin/${PACKAGE_NAME}"
+      
+      # Create configuration directory
+      mkdir -p "${{targets.destdir}}/etc/${PACKAGE_NAME}"
+      
+      # Create data and log directories
+      mkdir -p "${{targets.destdir}}/var/lib/${PACKAGE_NAME}"
+      mkdir -p "${{targets.destdir}}/var/log/${PACKAGE_NAME}"
+      
+      # Create systemd service if configured
+      if [ "${SYSTEMD_SERVICE}" = "true" ]; then
+        mkdir -p "${{targets.destdir}}/usr/lib/systemd/system"
+        cat > "${{targets.destdir}}/usr/lib/systemd/system/${PACKAGE_NAME}.service" << EOF
+      [Unit]
+      Description=${PACKAGE_DESCRIPTION}
+      After=network.target
+      
+      [Service]
+      Type=simple
+      User=nobody
+      ExecStart=/usr/bin/${PACKAGE_NAME}
+      Restart=always
+      RestartSec=10
+      
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      fi
+
+subpackages:
+  - name: ${PACKAGE_NAME}-doc
+    pipeline:
+      - runs: |
+          mkdir -p "${{targets.subpkgdir}}/usr/share/doc/${PACKAGE_NAME}"
+          cat > "${{targets.subpkgdir}}/usr/share/doc/${PACKAGE_NAME}/README.md" << 'EOF'
+          # ${PACKAGE_NAME}
+          
+          ${PACKAGE_DESCRIPTION}
+          
+          ## Usage
+          
+          \`\`\`bash
+          ${PACKAGE_NAME} --help
+          \`\`\`
+          
+          ## Configuration
+          
+          Configuration files are located in \`/etc/${PACKAGE_NAME}/\`
+          
+          ## Logs
+          
+          Logs are written to \`/var/log/${PACKAGE_NAME}/\`
+          EOF
+
+test:
+  pipeline:
+    - runs: |
+        ${PACKAGE_NAME} --help || echo "Help flag not supported"
+        ${PACKAGE_NAME} --version || echo "Version flag not supported"

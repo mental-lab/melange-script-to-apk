@@ -1,0 +1,11 @@
+name: deploy-config
+version: 1.0.0
+description: "Configuration deployment tool for ISV applications"
+script: deploy-config.sh
+language: bash
+dependencies:
+  - bash
+  - curl
+  - systemd
+systemd_service: false
+cron_schedule: ""

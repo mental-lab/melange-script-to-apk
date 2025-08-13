@@ -1,0 +1,172 @@
+services:
+  # Main Melange build service
+  melange-builder:
+    image: cgr.dev/chainguard/wolfi-base:latest
+    working_dir: /workspace
+    privileged: true
+    volumes:
+      - .:/workspace
+      - melange-cache:/tmp/melange-cache
+      - signing-keys:/workspace/keys
+    environment:
+      - MELANGE_CACHE_DIR=/tmp/melange-cache
+      - ARCHITECTURES=x86_64,aarch64
+      - SIGNING_KEY_NAME=melange.rsa
+    command: |
+      sh -c "
+        echo 'Installing dependencies...'
+        apk add --no-cache melange yq bash curl openssl make gettext
+        
+        echo 'Loading package configuration...'
+        export PACKAGE_NAME=$$(yq e '.name' package-config.yaml)
+        export PACKAGE_VERSION=$$(yq e '.version' package-config.yaml)
+        export PACKAGE_DESCRIPTION=$$(yq e '.description' package-config.yaml)
+        export SCRIPT_NAME=$$(yq e '.script' package-config.yaml)
+        export LANGUAGE=$$(yq e '.language' package-config.yaml)
+        
+        echo 'Building package: $$PACKAGE_NAME v$$PACKAGE_VERSION'
+        
+        # Generate signing keys if they don't exist
+        if [ ! -f keys/melange.rsa ]; then
+          echo 'Generating signing keys...'
+          mkdir -p keys
+          # Use melange keygen to generate the correct format
+          melange keygen keys/melange.rsa
+        fi
+        
+        # Load package configuration
+        export PACKAGE_NAME=$$(yq e '.name' package-config.yaml)
+        export PACKAGE_VERSION=$$(yq e '.version' package-config.yaml)
+        export PACKAGE_DESCRIPTION=$$(yq e '.description' package-config.yaml)
+        export SCRIPT_NAME=$$(yq e '.script' package-config.yaml)
+        export LANGUAGE=$$(yq e '.language' package-config.yaml)
+        
+        # Validate configuration
+        echo 'Validating package configuration...'
+        test -n \"$$PACKAGE_NAME\" || (echo 'ERROR: package name required' && exit 1)
+        test -n \"$$PACKAGE_VERSION\" || (echo 'ERROR: package version required' && exit 1)
+        test -n \"$$SCRIPT_NAME\" || (echo 'ERROR: script name required' && exit 1)
+        test -f \"tools/$$SCRIPT_NAME\" || (echo 'ERROR: Script tools/$$SCRIPT_NAME not found' && exit 1)
+        
+        # Generate Melange configuration
+        echo 'Generating Melange configuration...'
+        export SCRIPT_SHA256=$$(sha256sum tools/$$SCRIPT_NAME | awk '{print $$1}')
+        envsubst < melange/templates/$$LANGUAGE.yaml.tmpl > melange.yaml
+        
+        # Build packages
+        echo 'Building APK packages...'
+        mkdir -p packages
+        cp tools/$$SCRIPT_NAME ./
+        chmod +x $$SCRIPT_NAME
+        
+        for arch in x86_64 aarch64; do
+          echo \"Building for $$arch\"
+          melange build melange.yaml --arch $$arch --signing-key keys/melange.rsa --out-dir packages/
+        done
+        
+        echo 'Build completed successfully'
+      "
+    profiles:
+      - build
+
+  # Vulnerability scanner service
+  vulnerability-scanner:
+    image: cgr.dev/chainguard/wolfi-base:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: |
+      sh -c "
+        echo 'Installing Grype...'
+        apk add --no-cache curl
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        
+        echo 'Scanning packages for vulnerabilities...'
+        mkdir -p reports
+        for pkg in packages/*/*.apk; do
+          if [ -f \"$$pkg\" ]; then
+            echo 'Scanning $$pkg...'
+            grype $$pkg --output json > reports/$$(basename $$pkg .apk)-vulnerabilities.json || echo 'JSON scan failed for $$pkg'
+            grype $$pkg --output table > reports/$$(basename $$pkg .apk)-vulnerabilities.txt || echo 'Table scan failed for $$pkg'
+          fi
+        done
+        echo 'Vulnerability scanning complete. Reports in reports/ directory.'
+      "
+    profiles:
+      - scan
+
+  # Package tester service
+  package-tester:
+    image: cgr.dev/chainguard/wolfi-base:latest
+    working_dir: /workspace
+    privileged: true
+    volumes:
+      - .:/workspace
+    command: |
+      sh -c "
+        echo 'Testing built packages...'
+        apk add --no-cache bash
+        
+        # Copy public key for verification
+        if [ -f keys/melange.rsa.pub ]; then
+          cp keys/melange.rsa.pub /etc/apk/keys/
+        fi
+        
+        # Test package installation
+        for pkg in packages/*/*.apk; do
+          if [ -f \"$$pkg\" ]; then
+            echo 'Testing installation of $$pkg...'
+            apk add --allow-untrusted $$pkg
+            
+            # Test if the installed tool works
+            PACKAGE_NAME=$$(yq e '.name' package-config.yaml)
+            if command -v $$PACKAGE_NAME >/dev/null 2>&1; then
+              echo 'Testing $$PACKAGE_NAME --help'
+              $$PACKAGE_NAME --help || echo 'Help command failed but package is installed'
+            fi
+            
+            # Clean up for next test
+            apk del $$PACKAGE_NAME || true
+          fi
+        done
+        
+        echo 'Package testing complete.'
+      "
+    profiles:
+      - test
+
+  # Development environment service
+  dev-environment:
+    image: cgr.dev/chainguard/wolfi-base:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - melange-cache:/tmp/melange-cache
+    environment:
+      - MELANGE_CACHE_DIR=/tmp/melange-cache
+    command: |
+      sh -c "
+        echo 'Setting up development environment...'
+        apk add --no-cache melange yq bash curl openssl make gettext vim
+        echo 'Development environment ready!'
+        echo 'Available commands:'
+        echo '  make validate  - Validate configuration'
+        echo '  make generate  - Generate Melange config'
+        echo '  make build     - Build packages'
+        echo '  make test      - Test packages'
+        echo '  make clean     - Clean build artifacts'
+        echo '  make all       - Run full pipeline'
+        echo ''
+        echo 'Starting interactive shell...'
+        exec /bin/bash
+      "
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+
+volumes:
+  melange-cache:
+    driver: local
+  signing-keys:
+    driver: local

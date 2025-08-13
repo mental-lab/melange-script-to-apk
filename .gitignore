@@ -1,0 +1,43 @@
+# Build artifacts
+packages/
+keys/
+melange.yaml
+*.apk
+*.tar.gz
+
+# Vulnerability scan reports
+reports/
+
+# Docker build cache
+.docker/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# User-specific tools (keep examples)
+# Uncomment if you want users to add their own tools without committing
+# tools/*
+# !tools/deploy-config.sh
+# !tools/ssl-cert-monitor.py
+# !tools/system-monitor.py

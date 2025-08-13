@@ -1,0 +1,69 @@
+package:
+  name: ${PACKAGE_NAME}
+  version: ${PACKAGE_VERSION}
+  epoch: 0
+  description: ${PACKAGE_DESCRIPTION}
+  copyright:
+    - license: MIT
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - busybox
+      - bash
+      - ca-certificates-bundle
+
+pipeline:
+  - runs: |
+      ls -la
+      # Make sure script is executable
+      chmod +x ${SCRIPT_NAME} || echo "WARNING: Could not make script executable"
+      cat ${SCRIPT_NAME}
+
+  - runs: |
+      # Install script with executable permissions
+      install -Dm755 ${SCRIPT_NAME} "${{targets.destdir}}/usr/bin/${PACKAGE_NAME}"
+      # Double-check permissions
+      chmod 755 "${{targets.destdir}}/usr/bin/${PACKAGE_NAME}"
+      
+      # Create configuration directory
+      mkdir -p "${{targets.destdir}}/etc/${PACKAGE_NAME}"
+      
+      # Create data and log directories
+      mkdir -p "${{targets.destdir}}/var/lib/${PACKAGE_NAME}"
+      mkdir -p "${{targets.destdir}}/var/log/${PACKAGE_NAME}"
+
+subpackages:
+  - name: ${PACKAGE_NAME}-doc
+    pipeline:
+      - runs: |
+          mkdir -p "${{targets.subpkgdir}}/usr/share/doc/${PACKAGE_NAME}"
+          cat > "${{targets.subpkgdir}}/usr/share/doc/${PACKAGE_NAME}/README.md" << 'EOF'
+          # ${PACKAGE_NAME}
+          
+          ${PACKAGE_DESCRIPTION}
+          
+          ## Usage
+          
+          \`\`\`bash
+          ${PACKAGE_NAME} --help
+          \`\`\`
+          
+          ## Configuration
+          
+          Configuration files are located in \`/etc/${PACKAGE_NAME}/\`
+          
+          ## Logs
+          
+          Logs are written to \`/var/log/${PACKAGE_NAME}/\`
+          EOF
+
+test:
+  pipeline:
+    - runs: |
+        ${PACKAGE_NAME} --help || echo "Help flag not supported"
+        ${PACKAGE_NAME} --version || echo "Version flag not supported"

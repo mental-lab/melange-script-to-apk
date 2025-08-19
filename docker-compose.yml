@@ -34,13 +34,7 @@ services:
           melange keygen keys/melange.rsa
         fi
         
-        # Load package configuration
-        export PACKAGE_NAME=$$(yq e '.name' package-config.yaml)
-        export PACKAGE_VERSION=$$(yq e '.version' package-config.yaml)
-        export PACKAGE_DESCRIPTION=$$(yq e '.description' package-config.yaml)
-        export SCRIPT_NAME=$$(yq e '.script' package-config.yaml)
-        export LANGUAGE=$$(yq e '.language' package-config.yaml)
-        
+
         # Validate configuration
         echo 'Validating package configuration...'
         test -n \"$$PACKAGE_NAME\" || (echo 'ERROR: package name required' && exit 1)

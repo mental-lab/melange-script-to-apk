@@ -73,7 +73,6 @@ systemd_service: false    # Optional
 ## Security
 
 - RSA-4096 package signing
-- Vulnerability scanning with Grype
 - Minimal Chainguard base images
-- SBOM generation for compliance
+
 
